@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.py[cod]
+.pycache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Experiment outputs
+experiments/synthetic_holes/output/
+experiments/output/
+
+# Local matplotlib cache/config
+.mplconfig/
