@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from data_generation import HoledDiskSampleMeta as SampleMeta
-from data_generation import generate_holed_disk_sequence
+from data_generation import generate_holed_disk_pointcloud_dataset
 from shared import (
     boundary_outputs,
     clean_legacy_npy,
@@ -17,15 +17,16 @@ from shared import (
     save_distance_matrix_csv,
     save_homology_csv,
     save_matrix_csv,
-    save_overlay_test_images,
+    save_pointcloud_lists,
+    save_pointcloud_overlay_images,
     save_step_distances_csv,
     save_test_images_overview,
     save_weighted_graph_lists,
     to_repo_relative,
     write_csv,
 )
-from lapspec.converters import image_to_graph
 from lapspec.metrics import histogram_distance_matrix, spectrum_distance_matrix
+from lapspec.types import WeightedGraph
 from lapspec.visualization import mds_projection, pca_projection
 
 
@@ -120,31 +121,33 @@ def save_mds_csv(
 
 
 def main(
-    output_dir: str = "experiments/output/holed_disk",
+    output_dir: str = "experiments/output/pointcloud_holed_disk",
     masks: list[np.ndarray] | None = None,
+    pointclouds: list[np.ndarray] | None = None,
+    graphs: list[WeightedGraph] | None = None,
     metas: list[SampleMeta] | None = None,
 ) -> None:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     clean_legacy_npy(out)
 
-    if masks is None or metas is None:
-        masks, metas = generate_holed_disk_sequence()
-    sample_ids = [meta.sample_id for meta in metas]
-    graphs = [image_to_graph(mask, connectivity=8, weight_mode="distance") for mask in masks]
+    if masks is None or pointclouds is None or graphs is None or metas is None:
+        masks, pointclouds, graphs, metas = generate_holed_disk_pointcloud_dataset()
 
-    image_paths = save_overlay_test_images(
-        masks=masks,
+    sample_ids = [meta.sample_id for meta in metas]
+
+    image_paths = save_pointcloud_overlay_images(
+        pointclouds=pointclouds,
         graphs=graphs,
         sample_ids=sample_ids,
         out_dir=out,
-        title_builder=lambda sid: f"ID {sid:03d}",
+        title_builder=lambda sid: f"ID {sid:03d} | holed-disk pointcloud",
     )
     save_test_images_overview(
         image_paths=image_paths,
         sample_ids=sample_ids,
         out_path=out / "test_images_overview.png",
-        title="Holed Disk Test Images with Graph Overlay",
+        title="Holed Disk Pointcloud with Graph Overlay",
     )
     write_csv(
         out / "test_images_index.csv",
@@ -164,6 +167,7 @@ def main(
             for meta, path in zip(metas, image_paths)
         ],
     )
+    save_pointcloud_lists(pointclouds, out)
     save_weighted_graph_lists(graphs, out)
 
     spectrum_k = 48
@@ -304,6 +308,7 @@ def main(
     active_holes_values = np.asarray([meta.active_holes for meta in metas], dtype=np.int64)
     saved_paths = [
         out / "test_images_index.csv",
+        out / "pointcloud_index.csv",
         out / "weighted_graph_summary.csv",
         out / "dirichlet_features.csv",
         out / "neumann_features.csv",
@@ -316,7 +321,7 @@ def main(
     ]
     saved_lines = "".join(f"  - {to_repo_relative(path)}\n" for path in saved_paths)
     summary = (
-        "Synthetic holes experiment summary\n"
+        "Holed disk pointcloud experiment summary\n"
         f"num_samples: {len(metas)}\n"
         f"dirichlet_feature_dim: {dirichlet.features.shape[1]}\n"
         f"neumann_feature_dim: {neumann.features.shape[1]}\n"

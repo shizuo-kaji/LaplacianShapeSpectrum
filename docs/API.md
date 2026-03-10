@@ -83,25 +83,41 @@
 - `weight_mode`: `"unit" | "inverse_distance" | "gaussian"`
 - `boundary_mode`: `"outer_percentile" | "none"`
 
+### `pointcloud2d_to_cotan_graph(...)`
+定義: [triangulation.py](../src/lapspec/converters/triangulation.py)
+
+仕様:
+- 2D point cloud に Delaunay triangulation を適用
+- cotan 重み（各エッジに隣接三角形の cot 値を集約）で重み付きグラフを構築
+- `boundary_mode=\"convex_hull\"` で凸包頂点を境界ノードに設定可能
+
 ## Batch Features
 ### `FeatureConfig`
 定義: [batch.py](../src/lapspec/batch.py#L16)
 
 補足:
 - `hist_range` を指定するとヒストグラム範囲を変更可能
+- `hist_quantile_range` を指定すると分位点から範囲を自動推定可能
 - `hist_range=None` の場合は既定 `(0.0, 2.0)` を使用
 
-### `graph_feature_vector(graph, config)`
-定義: [batch.py](../src/lapspec/batch.py#L26)
+### `batch_spectrum(graphs, ...)`
+定義: [batch.py](../src/lapspec/batch.py)
+
+戻り値:
+- shape `(num_graphs, spectrum_k)`
+
+### `batch_spectrum_histogram(spectrums, ...)`
+定義: [batch.py](../src/lapspec/batch.py)
+
+仕様:
+- `value_range=(min, max)` の直接指定に対応
+- `quantile_range=(q_lo, q_hi)` 指定時は分位点から `value_range` を自動設定
+
+### `spectrum_histogram(graph, config)` (batch module)
+定義: [batch.py](../src/lapspec/batch.py)
 
 出力ベクトル:
 - `[固定長スペクトラム(spectrum_k), ヒストグラム(hist_bins)]`
-
-### `batch_features(graphs, ...)`
-定義: [batch.py](../src/lapspec/batch.py#L50)
-
-戻り値:
-- shape `(num_graphs, spectrum_k + hist_bins)`
 
 ## Distance Metrics
 ### `spectrum_distance_matrix(spectra, metric="l2"|"wasserstein")`

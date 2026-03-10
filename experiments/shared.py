@@ -18,8 +18,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from lapspec.laplacian import build_laplacian
-from lapspec.spectrum import compute_spectrum, fixed_length_spectrum, spectrum_histogram
+from lapspec.batch import batch_spectrum, batch_spectrum_histogram
 from lapspec.types import WeightedGraph
 
 
@@ -141,65 +140,124 @@ def save_pointcloud_overlay_images(
 
     for points, graph, sample_id in zip(pointclouds, graphs, sample_ids):
         image_path = image_dir / f"test_image_{sample_id:03d}.png"
-        fig = plt.figure(figsize=(4.0, 4.0))
-        ax = fig.add_subplot(111, projection="3d")
+        if points.ndim != 2:
+            raise ValueError("pointcloud must be a 2D array")
+        dim = points.shape[1]
 
         point_idx = _sample_indices(points.shape[0], max_points)
         p = points[point_idx]
-        ax.scatter(
-            p[:, 0],
-            p[:, 1],
-            p[:, 2],
-            s=2.0,
-            c="lightgray",
-            alpha=0.65,
-            depthshade=False,
-        )
 
-        if graph.node_positions is not None:
-            pos = graph.node_positions
-            if graph.edges.shape[0] > 0:
-                edge_idx = _sample_indices(graph.edges.shape[0], max_overlay_edges)
-                edges = graph.edges[edge_idx]
-                segments = pos[edges]
-                lines = Line3DCollection(
-                    segments,
-                    colors="deepskyblue",
-                    linewidths=0.23,
-                    alpha=0.32,
-                )
-                ax.add_collection3d(lines)
-            if graph.boundary_nodes.shape[0] > 0:
-                boundary_idx = _sample_indices(
-                    graph.boundary_nodes.shape[0],
-                    max_overlay_boundary_nodes,
-                )
-                nodes = graph.boundary_nodes[boundary_idx]
-                b = pos[nodes]
-                ax.scatter(
-                    b[:, 0],
-                    b[:, 1],
-                    b[:, 2],
-                    s=4.0,
-                    c="red",
-                    alpha=0.88,
-                    depthshade=False,
-                )
+        if dim == 3:
+            fig = plt.figure(figsize=(4.0, 4.0))
+            ax = fig.add_subplot(111, projection="3d")
+            ax.scatter(
+                p[:, 0],
+                p[:, 1],
+                p[:, 2],
+                s=2.0,
+                c="lightgray",
+                alpha=0.65,
+                depthshade=False,
+            )
 
-        mins = np.min(points, axis=0)
-        maxs = np.max(points, axis=0)
-        center = 0.5 * (mins + maxs)
-        radius = float(np.max(maxs - mins) * 0.58)
-        ax.set_xlim(center[0] - radius, center[0] + radius)
-        ax.set_ylim(center[1] - radius, center[1] + radius)
-        ax.set_zlim(center[2] - radius, center[2] + radius)
-        ax.set_box_aspect((1.0, 1.0, 1.0))
-        ax.view_init(elev=elev, azim=azim)
-        ax.set_title(title_builder(sample_id), fontsize=8)
-        ax.set_axis_off()
-        fig.tight_layout(pad=0.1)
-        fig.savefig(image_path, dpi=180)
-        plt.close(fig)
+            if graph.node_positions is not None:
+                pos = graph.node_positions
+                if graph.edges.shape[0] > 0:
+                    edge_idx = _sample_indices(graph.edges.shape[0], max_overlay_edges)
+                    edges = graph.edges[edge_idx]
+                    segments = pos[edges]
+                    lines = Line3DCollection(
+                        segments,
+                        colors="deepskyblue",
+                        linewidths=0.23,
+                        alpha=0.32,
+                    )
+                    ax.add_collection3d(lines)
+                if graph.boundary_nodes.shape[0] > 0:
+                    boundary_idx = _sample_indices(
+                        graph.boundary_nodes.shape[0],
+                        max_overlay_boundary_nodes,
+                    )
+                    nodes = graph.boundary_nodes[boundary_idx]
+                    b = pos[nodes]
+                    ax.scatter(
+                        b[:, 0],
+                        b[:, 1],
+                        b[:, 2],
+                        s=4.0,
+                        c="red",
+                        alpha=0.88,
+                        depthshade=False,
+                    )
+
+            mins = np.min(points, axis=0)
+            maxs = np.max(points, axis=0)
+            center = 0.5 * (mins + maxs)
+            radius = float(np.max(maxs - mins) * 0.58)
+            ax.set_xlim(center[0] - radius, center[0] + radius)
+            ax.set_ylim(center[1] - radius, center[1] + radius)
+            ax.set_zlim(center[2] - radius, center[2] + radius)
+            ax.set_box_aspect((1.0, 1.0, 1.0))
+            ax.view_init(elev=elev, azim=azim)
+            ax.set_title(title_builder(sample_id), fontsize=8)
+            ax.set_axis_off()
+            fig.tight_layout(pad=0.1)
+            fig.savefig(image_path, dpi=180)
+            plt.close(fig)
+        elif dim == 2:
+            fig, ax = plt.subplots(figsize=(4.0, 4.0))
+            ax.scatter(
+                p[:, 0],
+                p[:, 1],
+                s=2.0,
+                c="lightgray",
+                alpha=0.65,
+                linewidths=0.0,
+            )
+
+            if graph.node_positions is not None:
+                pos = graph.node_positions
+                if graph.edges.shape[0] > 0:
+                    edge_idx = _sample_indices(graph.edges.shape[0], max_overlay_edges)
+                    edges = graph.edges[edge_idx]
+                    segments = pos[edges]
+                    lines = LineCollection(
+                        segments,
+                        colors="deepskyblue",
+                        linewidths=0.23,
+                        alpha=0.32,
+                    )
+                    ax.add_collection(lines)
+                if graph.boundary_nodes.shape[0] > 0:
+                    boundary_idx = _sample_indices(
+                        graph.boundary_nodes.shape[0],
+                        max_overlay_boundary_nodes,
+                    )
+                    nodes = graph.boundary_nodes[boundary_idx]
+                    b = pos[nodes]
+                    ax.scatter(
+                        b[:, 0],
+                        b[:, 1],
+                        s=6.0,
+                        c="red",
+                        alpha=0.88,
+                        linewidths=0.0,
+                    )
+
+            mins = np.min(points, axis=0)
+            maxs = np.max(points, axis=0)
+            center = 0.5 * (mins + maxs)
+            radius = float(np.max(maxs - mins) * 0.58)
+            ax.set_xlim(center[0] - radius, center[0] + radius)
+            ax.set_ylim(center[1] - radius, center[1] + radius)
+            ax.set_aspect("equal")
+            ax.set_title(title_builder(sample_id), fontsize=8)
+            ax.axis("off")
+            fig.tight_layout(pad=0.1)
+            fig.savefig(image_path, dpi=180)
+            plt.close(fig)
+        else:
+            raise ValueError("pointcloud dimension must be 2 or 3")
         image_paths.append(image_path)
 
     return image_paths
@@ -211,19 +269,61 @@ def save_test_images_overview(
     out_path: Path,
     title: str,
     cols: int = 8,
+    case_ids: Sequence[int] | None = None,
 ) -> None:
     n = len(image_paths)
-    rows = int(np.ceil(n / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(cols * 2.0, rows * 2.0))
-    axes_array = np.atleast_2d(axes)
-    for i, ax in enumerate(axes_array.ravel()):
-        ax.axis("off")
-        if i >= n:
-            continue
-        ax.imshow(plt.imread(image_paths[i]))
-        ax.set_title(f"ID {int(sample_ids[i]):03d}", fontsize=8)
+    if len(sample_ids) != n:
+        raise ValueError("sample_ids length must match image_paths length")
+
+    if case_ids is None:
+        rows = int(np.ceil(n / cols))
+        fig, axes = plt.subplots(rows, cols, figsize=(cols * 2.0, rows * 2.0), squeeze=False)
+        for i, ax in enumerate(axes.ravel()):
+            ax.axis("off")
+            if i >= n:
+                continue
+            ax.imshow(plt.imread(image_paths[i]))
+            ax.set_title(f"ID {int(sample_ids[i]):03d}", fontsize=8)
+    else:
+        case_arr = np.asarray(case_ids, dtype=np.int64)
+        if case_arr.shape[0] != n:
+            raise ValueError("case_ids length must match image_paths length")
+
+        case_order: list[int] = []
+        grouped_indices: dict[int, list[int]] = {}
+        for idx, cid_raw in enumerate(case_arr):
+            cid = int(cid_raw)
+            if cid not in grouped_indices:
+                grouped_indices[cid] = []
+                case_order.append(cid)
+            grouped_indices[cid].append(idx)
+
+        rows = len(case_order)
+        cols_by_case = max((len(grouped_indices[cid]) for cid in case_order), default=1)
+        fig, axes = plt.subplots(
+            rows,
+            cols_by_case,
+            figsize=(cols_by_case * 2.0, rows * 2.2),
+            squeeze=False,
+        )
+        for row_idx, cid in enumerate(case_order):
+            idxs = grouped_indices[cid]
+            for col_idx, ax in enumerate(axes[row_idx]):
+                ax.axis("off")
+                if col_idx >= len(idxs):
+                    continue
+                image_idx = idxs[col_idx]
+                ax.imshow(plt.imread(image_paths[image_idx]))
+                ax.set_title(f"ID {int(sample_ids[image_idx]):03d}", fontsize=8)
+            axes[row_idx, 0].set_ylabel(
+                f"C{cid}",
+                fontsize=9,
+                rotation=0,
+                labelpad=16,
+                va="center",
+            )
     fig.suptitle(title, fontsize=12)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0.02, 0.02, 1.0, 0.96))
     fig.savefig(out_path, dpi=160)
     plt.close(fig)
 
@@ -306,27 +406,51 @@ def save_pointcloud_lists(
     index_rows: list[list[object]] = []
     summary_rows: list[list[object]] = []
 
+    summary_header: list[str] | None = None
+
     for sample_id, points in enumerate(pointclouds):
+        if points.ndim != 2:
+            raise ValueError("pointcloud must be a 2D array")
+        dim = points.shape[1]
+        if dim < 2:
+            raise ValueError("pointcloud dimension must be at least 2")
+
         points_path = point_dir / f"pointcloud_{sample_id:03d}.csv"
-        rows = [[float(x), float(y), float(z)] for x, y, z in points]
-        write_csv(points_path, ["x", "y", "z"], rows)
+        point_header = [f"x{d}" for d in range(dim)]
+        if dim == 2:
+            point_header = ["x", "y"]
+        elif dim == 3:
+            point_header = ["x", "y", "z"]
+        rows = [[float(v) for v in row] for row in points]
+        write_csv(points_path, point_header, rows)
 
         mins = np.min(points, axis=0)
         maxs = np.max(points, axis=0)
         extent = maxs - mins
         index_rows.append([sample_id, to_repo_relative(points_path), points.shape[0]])
-        summary_rows.append(
-            [
-                sample_id,
-                points.shape[0],
-                float(np.mean(points[:, 0])),
-                float(np.mean(points[:, 1])),
-                float(np.mean(points[:, 2])),
-                float(extent[0]),
-                float(extent[1]),
-                float(extent[2]),
+        row = [
+            sample_id,
+            points.shape[0],
+        ]
+        row.extend(float(np.mean(points[:, d])) for d in range(dim))
+        row.extend(float(extent[d]) for d in range(dim))
+        summary_rows.append(row)
+
+        if summary_header is None:
+            centroid_header = [f"centroid_x{d}" for d in range(dim)]
+            extent_header = [f"extent_x{d}" for d in range(dim)]
+            if dim == 2:
+                centroid_header = ["centroid_x", "centroid_y"]
+                extent_header = ["extent_x", "extent_y"]
+            elif dim == 3:
+                centroid_header = ["centroid_x", "centroid_y", "centroid_z"]
+                extent_header = ["extent_x", "extent_y", "extent_z"]
+            summary_header = [
+                "sample_id",
+                "num_points",
+                *centroid_header,
+                *extent_header,
             ]
-        )
 
     write_csv(
         out_dir / "pointcloud_index.csv",
@@ -335,16 +459,7 @@ def save_pointcloud_lists(
     )
     write_csv(
         out_dir / "pointcloud_summary.csv",
-        [
-            "sample_id",
-            "num_points",
-            "centroid_x",
-            "centroid_y",
-            "centroid_z",
-            "extent_x",
-            "extent_y",
-            "extent_z",
-        ],
+        summary_header if summary_header is not None else ["sample_id", "num_points"],
         summary_rows,
     )
 
@@ -397,64 +512,66 @@ def boundary_outputs(
     spectrum_k: int,
     hist_bins: int,
     hist_range: tuple[float, float] | None = (0.0, 2.0),
-    range_quantile: float = 0.995,
-    range_padding: float = 1.05,
-    range_min_upper: float = 0.05,
-    range_max_upper: float = 2.0,
+    hist_quantile_range: tuple[float, float] | None = None,
 ) -> BoundaryOutputs:
-    eigs_list: list[np.ndarray] = []
-    for graph in graphs:
-        lap = build_laplacian(graph, boundary=boundary).matrix
-        eigs = compute_spectrum(lap, k=spectrum_k)
-        eigs_list.append(eigs)
+    spectra = batch_spectrum(
+        graphs,
+        spectrum_k=spectrum_k,
+        boundary=boundary,
+    )
 
-    if hist_range is None:
-        flat_parts = [e for e in eigs_list if e.size > 0]
-        if flat_parts:
-            flat = np.concatenate(flat_parts)
-            finite = flat[np.isfinite(flat)]
-            finite = finite[finite >= 0.0]
-        else:
-            finite = np.empty(0, dtype=np.float64)
-        if finite.size == 0:
-            selected_hist_range = (0.0, range_max_upper)
-        else:
-            q = float(np.quantile(finite, range_quantile))
-            upper = max(range_min_upper, q * range_padding)
-            upper = min(range_max_upper, upper)
-            if upper <= 0.0:
-                upper = range_min_upper
-            selected_hist_range = (0.0, float(upper))
-    else:
+    if hist_range is not None:
         selected_hist_range = (float(hist_range[0]), float(hist_range[1]))
         if not np.isfinite(selected_hist_range[0]) or not np.isfinite(selected_hist_range[1]):
             raise ValueError("hist_range values must be finite")
         if selected_hist_range[0] >= selected_hist_range[1]:
             raise ValueError("hist_range must satisfy min < max")
+    elif hist_quantile_range is None:
+        selected_hist_range = (0.0, 2.0)
+    else:
+        q_lo = float(hist_quantile_range[0])
+        q_hi = float(hist_quantile_range[1])
+        if not (0.0 <= q_lo < q_hi <= 1.0):
+            raise ValueError("hist_quantile_range must satisfy 0 <= q_lo < q_hi <= 1")
+
+        finite = spectra[np.isfinite(spectra)]
+        if finite.size == 0:
+            raise ValueError("cannot infer hist_range from empty spectra")
+        lo, hi = np.quantile(finite, [q_lo, q_hi]).astype(np.float64)
+        if lo >= hi:
+            center = float(lo)
+            eps = max(1e-12, abs(center) * 1e-12)
+            lo = center - eps
+            hi = center + eps
+        selected_hist_range = (float(lo), float(hi))
+
+    hist_matrix = batch_spectrum_histogram(
+        spectra,
+        bins=hist_bins,
+        value_range=selected_hist_range,
+        density=True,
+    )
+    features = np.hstack([spectra, hist_matrix]) if spectra.shape[0] > 0 else np.zeros(
+        (0, spectrum_k + hist_bins),
+        dtype=np.float64,
+    )
 
     hist_rows: list[list[object]] = []
     eig_rows: list[list[object]] = []
-    hist_matrix_rows: list[np.ndarray] = []
-    feature_rows: list[np.ndarray] = []
+    edges = np.linspace(
+        selected_hist_range[0],
+        selected_hist_range[1],
+        hist_bins + 1,
+        dtype=np.float64,
+    )
 
-    for sample_id, eigs in enumerate(eigs_list):
-        eigs_fixed = fixed_length_spectrum(eigs, length=spectrum_k, fill_value=0.0)
-        hist, edges = spectrum_histogram(
-            eigs,
-            bins=hist_bins,
-            value_range=selected_hist_range,
-            density=True,
-        )
-        feature_rows.append(np.concatenate([eigs_fixed, hist]))
-        hist_matrix_rows.append(hist)
-
+    for sample_id, eigs in enumerate(spectra):
         for j, eig in enumerate(eigs):
             eig_rows.append([sample_id, j, float(eig)])
+    for sample_id, hist in enumerate(hist_matrix):
         for b, value in enumerate(hist):
             hist_rows.append([sample_id, b, float(edges[b]), float(edges[b + 1]), float(value)])
 
-    features = np.vstack(feature_rows) if feature_rows else np.zeros((0, spectrum_k + hist_bins))
-    hist_matrix = np.vstack(hist_matrix_rows) if hist_matrix_rows else np.zeros((0, hist_bins))
     step_distances = consecutive_distances(features)
     return BoundaryOutputs(
         features=features,
@@ -622,11 +739,19 @@ def plot_mds_with_ids(
     )
 
 
-def _draw_case_brackets(ax: plt.Axes, case_ids: np.ndarray) -> None:
+def _draw_case_brackets(
+    ax: plt.Axes,
+    case_ids: np.ndarray,
+    x_data_min: float,
+    x_data_max: float,
+) -> None:
     if case_ids.size == 0:
         return
-    x0 = -2.4
-    x1 = -1.9
+    span = float(x_data_max - x_data_min)
+    if span <= 0.0:
+        span = 1.0
+    x0 = x_data_min - 0.15 * span
+    x1 = x_data_min - 0.05 * span
     start = 0
     n = case_ids.shape[0]
     while start < n:
@@ -640,7 +765,7 @@ def _draw_case_brackets(ax: plt.Axes, case_ids: np.ndarray) -> None:
         ax.plot([x0, x1], [y0, y0], color="white", linewidth=1.4, clip_on=False)
         ax.plot([x0, x1], [y1, y1], color="white", linewidth=1.4, clip_on=False)
         ax.text(
-            x0 - 0.2,
+            x0 - 0.02 * span,
             0.5 * (y0 + y1),
             f"C{cid}",
             color="white",
@@ -658,26 +783,58 @@ def plot_histogram_matrices(
     neu_hist: np.ndarray,
     out_path: Path,
     case_ids: np.ndarray | None = None,
+    dir_hist_range: tuple[float, float] | None = None,
+    neu_hist_range: tuple[float, float] | None = None,
 ) -> None:
+    dir_xmin, dir_xmax = (
+        (float(dir_hist_range[0]), float(dir_hist_range[1]))
+        if dir_hist_range is not None
+        else (0.0, float(dir_hist.shape[1]))
+    )
+    neu_xmin, neu_xmax = (
+        (float(neu_hist_range[0]), float(neu_hist_range[1]))
+        if neu_hist_range is not None
+        else (0.0, float(neu_hist.shape[1]))
+    )
+
+    if dir_xmin >= dir_xmax:
+        raise ValueError("dir_hist_range must satisfy min < max")
+    if neu_xmin >= neu_xmax:
+        raise ValueError("neu_hist_range must satisfy min < max")
+
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    im0 = axes[0].imshow(dir_hist, aspect="auto", origin="lower", cmap="magma")
+    im0 = axes[0].imshow(
+        dir_hist,
+        aspect="auto",
+        origin="lower",
+        cmap="magma",
+        extent=(dir_xmin, dir_xmax, -0.5, dir_hist.shape[0] - 0.5),
+    )
     axes[0].set_title("Dirichlet Histogram List")
-    axes[0].set_xlabel("bin index")
+    axes[0].set_xlabel("spectrum value")
     axes[0].set_ylabel("sample ID")
     fig.colorbar(im0, ax=axes[0], label="density")
 
-    im1 = axes[1].imshow(neu_hist, aspect="auto", origin="lower", cmap="magma")
+    im1 = axes[1].imshow(
+        neu_hist,
+        aspect="auto",
+        origin="lower",
+        cmap="magma",
+        extent=(neu_xmin, neu_xmax, -0.5, neu_hist.shape[0] - 0.5),
+    )
     axes[1].set_title("Neumann Histogram List")
-    axes[1].set_xlabel("bin index")
+    axes[1].set_xlabel("spectrum value")
     axes[1].set_ylabel("sample ID")
     fig.colorbar(im1, ax=axes[1], label="density")
 
     if case_ids is not None:
         case_arr = np.asarray(case_ids, dtype=np.int64)
-        axes[0].set_xlim(-3.2, dir_hist.shape[1] - 0.5)
-        axes[1].set_xlim(-3.2, neu_hist.shape[1] - 0.5)
-        _draw_case_brackets(axes[0], case_arr)
-        _draw_case_brackets(axes[1], case_arr)
+        dir_margin = 0.2 * (dir_xmax - dir_xmin)
+        neu_margin = 0.2 * (neu_xmax - neu_xmin)
+        axes[0].set_xlim(dir_xmin - dir_margin, dir_xmax)
+        axes[1].set_xlim(neu_xmin - neu_margin, neu_xmax)
+        _draw_case_brackets(axes[0], case_arr, x_data_min=dir_xmin, x_data_max=dir_xmax)
+        _draw_case_brackets(axes[1], case_arr, x_data_min=neu_xmin, x_data_max=neu_xmax)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=170)

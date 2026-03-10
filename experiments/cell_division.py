@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from scipy import ndimage
 
+from data_generation import CellDivisionSampleMeta as SampleMeta
+from data_generation import generate_cell_division_dataset
 from shared import (
     boundary_outputs,
     clean_legacy_npy,
-    compute_h0_h1,
     plot_histogram_matrices,
     plot_mds_with_ids,
     plot_pca_homology_colors,
@@ -27,186 +26,6 @@ from shared import (
 from lapspec.converters import image_to_graph
 from lapspec.metrics import histogram_distance_matrix, spectrum_distance_matrix
 from lapspec.visualization import mds_projection, pca_projection
-
-
-@dataclass(frozen=True, slots=True)
-class DivisionCase:
-    case_id: int
-    case_name: str
-    axis_a: float
-    axis_b: float
-    angle_deg: float
-    sep_max: float
-    threshold: float
-    threshold_ramp: float
-    profile_gamma: float
-    lobe_balance: float
-    neck_strength: float
-
-
-@dataclass(frozen=True, slots=True)
-class SampleMeta:
-    sample_id: int
-    case_id: int
-    case_name: str
-    local_step: int
-    t: float
-    sep: float
-    axis_a: float
-    axis_b: float
-    angle_deg: float
-    threshold: float
-    threshold_ramp: float
-    profile_gamma: float
-    lobe_balance: float
-    neck_strength: float
-    homology_h0: int
-    homology_h1: int
-
-
-def default_cases() -> list[DivisionCase]:
-    return [
-        DivisionCase(
-            case_id=0,
-            case_name="round_soft",
-            axis_a=24.0,
-            axis_b=24.0,
-            angle_deg=0.0,
-            sep_max=44.0,
-            threshold=0.64,
-            threshold_ramp=0.08,
-            profile_gamma=1.0,
-            lobe_balance=1.00,
-            neck_strength=0.16,
-        ),
-        DivisionCase(
-            case_id=1,
-            case_name="elongated_tilt",
-            axis_a=32.0,
-            axis_b=18.0,
-            angle_deg=22.0,
-            sep_max=62.0,
-            threshold=0.62,
-            threshold_ramp=0.14,
-            profile_gamma=1.35,
-            lobe_balance=1.10,
-            neck_strength=0.26,
-        ),
-        DivisionCase(
-            case_id=2,
-            case_name="flat_wide",
-            axis_a=36.0,
-            axis_b=14.5,
-            angle_deg=-18.0,
-            sep_max=56.0,
-            threshold=0.60,
-            threshold_ramp=0.16,
-            profile_gamma=0.80,
-            lobe_balance=0.92,
-            neck_strength=0.30,
-        ),
-        DivisionCase(
-            case_id=3,
-            case_name="tall_rotated",
-            axis_a=19.0,
-            axis_b=30.0,
-            angle_deg=66.0,
-            sep_max=40.0,
-            threshold=0.66,
-            threshold_ramp=0.08,
-            profile_gamma=1.20,
-            lobe_balance=1.05,
-            neck_strength=0.18,
-        ),
-        DivisionCase(
-            case_id=4,
-            case_name="asymmetric_split",
-            axis_a=28.0,
-            axis_b=20.0,
-            angle_deg=-34.0,
-            sep_max=52.0,
-            threshold=0.63,
-            threshold_ramp=0.14,
-            profile_gamma=1.55,
-            lobe_balance=1.22,
-            neck_strength=0.27,
-        ),
-    ]
-
-
-def _rotated_coords(size: int, angle_deg: float) -> tuple[np.ndarray, np.ndarray]:
-    yy, xx = np.mgrid[:size, :size].astype(np.float64)
-    center = (size - 1) / 2.0
-    dx = xx - center
-    dy = yy - center
-    theta = np.deg2rad(angle_deg)
-    cos_t = float(np.cos(theta))
-    sin_t = float(np.sin(theta))
-    xr = cos_t * dx + sin_t * dy
-    yr = -sin_t * dx + cos_t * dy
-    return xr, yr
-
-
-def division_mask(size: int, case: DivisionCase, t: float) -> tuple[np.ndarray, float]:
-    t_clamped = min(max(float(t), 0.0), 1.0)
-    sep = case.sep_max * (t_clamped**case.profile_gamma)
-
-    xr, yr = _rotated_coords(size=size, angle_deg=case.angle_deg)
-    left = np.exp(
-        -((((xr + 0.5 * sep) / case.axis_a) ** 2) + ((yr / case.axis_b) ** 2))
-    )
-    right = case.lobe_balance * np.exp(
-        -((((xr - 0.5 * sep) / case.axis_a) ** 2) + ((yr / case.axis_b) ** 2))
-    )
-    neck_profile = t_clamped**1.25
-    neck = case.neck_strength * neck_profile * np.exp(
-        -((((xr) / (0.28 * case.axis_a)) ** 2) + ((yr / (0.95 * case.axis_b)) ** 2))
-    )
-    field = left + right - neck
-    effective_threshold = case.threshold + case.threshold_ramp * (t_clamped**1.3)
-    mask = field >= effective_threshold
-    mask = ndimage.binary_fill_holes(mask)
-    return mask.astype(bool), float(sep)
-
-
-def generate_dataset(
-    num_steps_per_case: int = 18,
-    size: int = 180,
-) -> tuple[list[np.ndarray], list[SampleMeta]]:
-    if num_steps_per_case < 2:
-        raise ValueError("num_steps_per_case must be at least 2")
-
-    masks: list[np.ndarray] = []
-    metas: list[SampleMeta] = []
-    sample_id = 0
-    for case in default_cases():
-        for local_step in range(num_steps_per_case):
-            t = local_step / (num_steps_per_case - 1)
-            mask, sep = division_mask(size=size, case=case, t=t)
-            h0, h1 = compute_h0_h1(mask, min_component_pixels=40, min_hole_pixels=40)
-            masks.append(mask)
-            metas.append(
-                SampleMeta(
-                    sample_id=sample_id,
-                    case_id=case.case_id,
-                    case_name=case.case_name,
-                    local_step=local_step,
-                    t=float(t),
-                    sep=sep,
-                    axis_a=case.axis_a,
-                    axis_b=case.axis_b,
-                    angle_deg=case.angle_deg,
-                    threshold=case.threshold,
-                    threshold_ramp=case.threshold_ramp,
-                    profile_gamma=case.profile_gamma,
-                    lobe_balance=case.lobe_balance,
-                    neck_strength=case.neck_strength,
-                    homology_h0=h0,
-                    homology_h1=h1,
-                )
-            )
-            sample_id += 1
-    return masks, metas
 
 
 def save_pca_csv(
@@ -315,12 +134,17 @@ def save_mds_csv(path: Path, coords: np.ndarray, metas: list[SampleMeta]) -> Non
     )
 
 
-def main(output_dir: str = "experiments/output/cell_division") -> None:
+def main(
+    output_dir: str = "experiments/output/cell_division",
+    masks: list[np.ndarray] | None = None,
+    metas: list[SampleMeta] | None = None,
+) -> None:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     clean_legacy_npy(out)
 
-    masks, metas = generate_dataset()
+    if masks is None or metas is None:
+        masks, metas = generate_cell_division_dataset()
     sample_ids = [meta.sample_id for meta in metas]
     graphs = [image_to_graph(mask, connectivity=8, weight_mode="distance") for mask in masks]
 
@@ -336,6 +160,7 @@ def main(output_dir: str = "experiments/output/cell_division") -> None:
         sample_ids=sample_ids,
         out_path=out / "test_images_overview.png",
         title="Cell Division Test Images with Graph Overlay",
+        case_ids=[meta.case_id for meta in metas],
     )
     write_csv(
         out / "test_images_index.csv",
@@ -391,10 +216,7 @@ def main(output_dir: str = "experiments/output/cell_division") -> None:
         spectrum_k=spectrum_k,
         hist_bins=hist_bins,
         hist_range=None,
-        range_quantile=0.995,
-        range_padding=1.08,
-        range_min_upper=0.12,
-        range_max_upper=0.50,
+        hist_quantile_range=(0.0, 0.995),
     )
     neumann = boundary_outputs(
         graphs,
@@ -402,10 +224,7 @@ def main(output_dir: str = "experiments/output/cell_division") -> None:
         spectrum_k=spectrum_k,
         hist_bins=hist_bins,
         hist_range=None,
-        range_quantile=0.995,
-        range_padding=1.08,
-        range_min_upper=0.12,
-        range_max_upper=0.50,
+        hist_quantile_range=(0.0, 0.995),
     )
 
     save_matrix_csv(out / "dirichlet_features.csv", dirichlet.features, prefix="feature")
@@ -485,6 +304,8 @@ def main(output_dir: str = "experiments/output/cell_division") -> None:
         neu_hist=neumann.hist_matrix,
         out_path=out / "spectrum_histogram_list.png",
         case_ids=np.asarray([meta.case_id for meta in metas], dtype=np.int64),
+        dir_hist_range=dirichlet.hist_range,
+        neu_hist_range=neumann.hist_range,
     )
 
     dir_mds_spec, dir_mds_spec_model = mds_projection(
